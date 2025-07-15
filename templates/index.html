@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎙️ Ollama STT Web Portal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            color: #4a5568;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            color: #718096;
+        }
+
+        .badges {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            background: #4299e1;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 500;
+        }
+
+        .badge.success { background: #48bb78; }
+        .badge.warning { background: #ed8936; }
+        .badge.error { background: #f56565; }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.15);
+        }
+
+        .card h2 {
+            color: #4a5568;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #4a5568;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #4299e1;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            background: linear-gradient(135deg, #3182ce 0%, #2c5282 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        }
+
+        .btn-success:hover {
+            background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+        }
+
+        .btn-warning:hover {
+            background: linear-gradient(135deg, #dd6b20 0%, #c05621 100%);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+        }
+
+        .btn-danger:hover {
+            background: linear-gradient(135deg, #e53e3e 0%, #c53030 100%);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .recording-indicator {
+            display: none;
+            text-align: center;
+            color: #e53e3e;
+            font-weight: 500;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .result-area {
+            background: #f7fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            min-height: 100px;
+            font-family: monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .result-area.success {
+            background: #f0fff4;
+            border-color: #9ae6b4;
+            color: #276749;
+        }
+
+        .result-area.error {
+            background: #fff5f5;
+            border-color: #feb2b2;
+            color: #c53030;
+        }
+
+        .history-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .history-item {
+            background: #f7fafc;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid #4299e1;
+        }
+
+        .history-item .timestamp {
+            font-size: 0.9em;
+            color: #718096;
+            margin-bottom: 5px;
+        }
+
+        .history-item .text {
+            font-weight: 500;
+            color: #4a5568;
+        }
+
+        .history-item .meta {
+            font-size: 0.8em;
+            color: #a0aec0;
+            margin-top: 5px;
+        }
+
+        .file-upload {
+            position: relative;
+            display: inline-block;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .file-upload input[type="file"] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .file-upload-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            border: 2px dashed #cbd5e0;
+            border-radius: 10px;
+            color: #718096;
+            font-size: 1.1em;
+            transition: all 0.3s ease;
+        }
+
+        .file-upload-label:hover {
+            border-color: #4299e1;
+            color: #4299e1;
+            background: rgba(66, 153, 225, 0.05);
+        }
+
+        .loader {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4299e1;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status-bar {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 20px;
+            margin-top: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #f56565;
+        }
+
+        .status-indicator.online {
+            background: #48bb78;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .badges {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .status-bar {
+                flex-direction: column;
+                gap: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🎙️ Ollama STT Web Portal</h1>
+            <p>Speech-to-Text with AI Integration</p>
+            <div class="badges">
+                <span class="badge" id="python-badge">Python Ready</span>
+                <span class="badge" id="mic-badge">Microphone</span>
+                <span class="badge" id="ollama-badge">Ollama</span>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Microphone Recording -->
+            <div class="card">
+                <h2>🎤 Voice Recording</h2>
+                <div class="form-group">
+                    <label for="engine-select">Recognition Engine:</label>
+                    <select id="engine-select" class="form-control">
+                        <option value="google">Google Speech API</option>
+                        <option value="whisper">OpenAI Whisper</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="duration-input">Recording Duration (seconds):</label>
+                    <input type="number" id="duration-input" class="form-control" value="10" min="1" max="60">
+                </div>
+                <button id="record-btn" class="btn btn-success">
+                    🎙️ Start Recording
+                </button>
+                <div id="recording-indicator" class="recording-indicator">
+                    🔴 Recording... Speak now!
+                </div>
+                <div id="mic-loader" class="loader">
+                    <div class="spinner"></div>
+                    <p>Processing audio...</p>
+                </div>
+                <div id="mic-result" class="result-area">
+                    Click "Start Recording" to begin voice transcription...
+                </div>
+            </div>
+
+            <!-- File Upload -->
+            <div class="card">
+                <h2>📂 Audio File Upload</h2>
+                <div class="form-group">
+                    <label for="file-engine-select">Recognition Engine:</label>
+                    <select id="file-engine-select" class="form-control">
+                        <option value="google">Google Speech API</option>
+                        <option value="whisper">OpenAI Whisper</option>
+                    </select>
+                </div>
+                <div class="file-upload">
+                    <input type="file" id="audio-file" accept="audio/*">
+                    <label for="audio-file" class="file-upload-label">
+                        📁 Click to select audio file or drag & drop
+                    </label>
+                </div>
+                <button id="upload-btn" class="btn" disabled>
+                    📤 Upload & Transcribe
+                </button>
+                <div id="upload-loader" class="loader">
+                    <div class="spinner"></div>
+                    <p>Processing uploaded file...</p>
+                </div>
+                <div id="upload-result" class="result-area">
+                    Select an audio file to begin transcription...
+                </div>
+            </div>
+        </div>
+
+        <!-- Ollama Integration -->
+        <div class="card">
+            <h2>🤖 Ollama AI Integration</h2>
+            <div class="form-group">
+                <label for="ollama-model">Model:</label>
+                <select id="ollama-model" class="form-control">
+                    <option value="llama3.1:latest">LLaMA 3.1 (latest)</option>
+                    <option value="llama3.1:8b">LLaMA 3.1 (8B)</option>
+                    <option value="llama3.1:70b">LLaMA 3.1 (70B)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="ollama-text">Text to process:</label>
+                <textarea id="ollama-text" class="form-control" rows="3" placeholder="Enter text or use transcribed text from above..."></textarea>
+            </div>
+            <button id="ollama-btn" class="btn btn-warning">
+                🚀 Send to Ollama
+            </button>
+            <div id="ollama-loader" class="loader">
+                <div class="spinner"></div>
+                <p>Processing with Ollama...</p>
+            </div>
+            <div id="ollama-result" class="result-area">
+                Ollama response will appear here...
+            </div>
+        </div>
+
+        <!-- History Section -->
+        <div class="history-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>📝 Transcription History</h2>
+                <button id="clear-history-btn" class="btn btn-danger">
+                    🗑️ Clear History
+                </button>
+            </div>
+            <div id="history-container">
+                <p style="color: #718096; text-align: center; padding: 20px;">
+                    No transcriptions yet. Start recording or upload a file to begin!
+                </p>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-indicator" id="mic-status"></div>
+                <span>Microphone</span>
+            </div>
+            <div class="status-item">
+                <div class="status-indicator" id="ollama-status"></div>
+                <span>Ollama</span>
+            </div>
+            <div class="status-item">
+                <span id="transcription-count">0 transcriptions</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let isRecording = false;
+        let transcriptionHistory = [];
+
+        // DOM elements
+        const recordBtn = document.getElementById('record-btn');
+        const uploadBtn = document.getElementById('upload-btn');
+        const ollamaBtn = document.getElementById('ollama-btn');
+        const audioFileInput = document.getElementById('audio-file');
+        const clearHistoryBtn = document.getElementById('clear-history-btn');
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSystemInfo();
+            loadHistory();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            // Recording button
+            recordBtn.addEventListener('click', startRecording);
+            
+            // File upload
+            audioFileInput.addEventListener('change', function() {
+                uploadBtn.disabled = !this.files.length;
+                if (this.files.length) {
+                    uploadBtn.innerHTML = '📤 Upload & Transcribe';
+                } else {
+                    uploadBtn.innerHTML = '📤 Upload & Transcribe';
+                }
+            });
+            
+            uploadBtn.addEventListener('click', uploadAndTranscribe);
+            
+            // Ollama integration
+            ollamaBtn.addEventListener('click', sendToOllama);
+            
+            // Clear history
+            clearHistoryBtn.addEventListener('click', clearHistory);
+            
+            // Auto-fill Ollama text from results
+            document.addEventListener('click', function(e) {
+                if (e.target.classList.contains('use-text-btn')) {
+                    const text = e.target.getAttribute('data-text');
+                    document.getElementById('ollama-text').value = text;
+                }
+            });
+        }
+
+        async function loadSystemInfo() {
+            try {
+                const response = await fetch('/api/system-info');
+                const data = await response.json();
+                
+                // Update badges
+                updateBadge('python-badge', 'Python Ready', 'success');
+                updateBadge('mic-badge', 
+                    data.microphone_available ? 'Microphone Ready' : 'Microphone Error', 
+                    data.microphone_available ? 'success' : 'error'
+                );
+                updateBadge('ollama-badge', 
+                    data.ollama_available ? 'Ollama Ready' : 'Ollama Offline', 
+                    data.ollama_available ? 'success' : 'warning'
+                );
+                
+                // Update status indicators
+                document.getElementById('mic-status').className = 
+                    'status-indicator ' + (data.microphone_available ? 'online' : '');
+                document.getElementById('ollama-status').className = 
+                    'status-indicator ' + (data.ollama_available ? 'online' : '');
+                
+                // Update transcription count
+                document.getElementById('transcription-count').textContent = 
+                    `${data.transcription_count} transcriptions`;
+            } catch (error) {
+                console.error('Error loading system info:', error);
+            }
+        }
+
+        function updateBadge(id, text, type) {
+            const badge = document.getElementById(id);
+            badge.textContent = text;
+            badge.className = `badge ${type}`;
+        }
+
+        async function startRecording() {
+            if (isRecording) return;
+            
+            isRecording = true;
+            recordBtn.disabled = true;
+            recordBtn.innerHTML = '🎤 Recording...';
+            
+            const engine = document.getElementById('engine-select').value;
+            const duration = parseInt(document.getElementById('duration-input').value);
+            
+            document.getElementById('recording-indicator').style.display = 'block';
+            document.getElementById('mic-loader').style.display = 'block';
+            document.getElementById('mic-result').textContent = 'Recording in progress...';
+            
+            try {
+                const response = await fetch('/api/transcribe', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        method: 'microphone',
+                        engine: engine,
+                        duration: duration
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult('mic-result', data.text, 'success');
+                    addToHistory(data.text, engine, 'microphone');
+                } else {
+                    showResult('mic-result', `Error: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showResult('mic-result', `Network Error: ${error.message}`, 'error');
+            } finally {
+                isRecording = false;
+                recordBtn.disabled = false;
+                recordBtn.innerHTML = '🎙️ Start Recording';
+                document.getElementById('recording-indicator').style.display = 'none';
+                document.getElementById('mic-loader').style.display = 'none';
+            }
+        }
+
+        async function uploadAndTranscribe() {
+            const fileInput = document.getElementById('audio-file');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showResult('upload-result', 'Please select an audio file', 'error');
+                return;
+            }
+            
+            const engine = document.getElementById('file-engine-select').value;
+            const formData = new FormData();
+            formData.append('audio', file);
+            formData.append('engine', engine);
+            
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '📤 Processing...';
+            document.getElementById('upload-loader').style.display = 'block';
+            
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult('upload-result', data.text, 'success');
+                    addToHistory(data.text, engine, 'upload', file.name);
+                } else {
+                    showResult('upload-result', `Error: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showResult('upload-result', `Network Error: ${error.message}`, 'error');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '📤 Upload & Transcribe';
+                document.getElementById('upload-loader').style.display = 'none';
+            }
+        }
+
+        async function sendToOllama() {
+            const text = document.getElementById('ollama-text').value.trim();
+            const model = document.getElementById('ollama-model').value;
+            
+            if (!text) {
+                showResult('ollama-result', 'Please enter text to process', 'error');
+                return;
+            }
+            
+            ollamaBtn.disabled = true;
+            ollamaBtn.innerHTML = '🤖 Processing...';
+            document.getElementById('ollama-loader').style.display = 'block';
+            
+            try {
+                const response = await fetch('/api/forward-to-ollama', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        model: model
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult('ollama-result', data.response, 'success');
+                } else {
+                    showResult('ollama-result', `Error: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showResult('ollama-result', `Network Error: ${error.message}`, 'error');
+            } finally {
+                ollamaBtn.disabled = false;
+                ollamaBtn.innerHTML = '🚀 Send to Ollama';
+                document.getElementById('ollama-loader').style.display = 'none';
+            }
+        }
+
+        function showResult(elementId, text, type) {
+            const element = document.getElementById(elementId);
+            element.textContent = text;
+            element.className = `result-area ${type}`;
+        }
+
+        function addToHistory(text, engine, method, filename = null) {
+            const now = new Date();
+            const entry = {
+                text: text,
+                engine: engine,
+                method: method,
+                filename: filename,
+                timestamp: now.toISOString()
+            };
+            
+            transcriptionHistory.unshift(entry);
+            renderHistory();
+            
+            // Update transcription count
+            document.getElementById('transcription-count').textContent = 
+                `${transcriptionHistory.length} transcriptions`;
+        }
+
+        function renderHistory() {
+            const container = document.getElementById('history-container');
+            
+            if (transcriptionHistory.length === 0) {
+                container.innerHTML = `
+                    <p style="color: #718096; text-align: center; padding: 20px;">
+                        No transcriptions yet. Start recording or upload a file to begin!
+                    </p>
+                `;
+                return;
+            }
+            
+            const historyHTML = transcriptionHistory.map(entry => {
+                const date = new Date(entry.timestamp);
+                const timeStr = date.toLocaleString();
+                const methodIcon = entry.method === 'microphone' ? '🎤' : '📁';
+                
+                return `
+                    <div class="history-item">
+                        <div class="timestamp">${methodIcon} ${timeStr}</div>
+                        <div class="text">${entry.text}</div>
+                        <div class="meta">
+                            Engine: ${entry.engine} | Method: ${entry.method}
+                            ${entry.filename ? ` | File: ${entry.filename}` : ''}
+                            <button class="btn" style="margin-left: 10px; padding: 4px 8px; font-size: 12px;" 
+                                    onclick="document.getElementById('ollama-text').value = '${entry.text.replace(/'/g, '\\\'')}'">
+                                Use in Ollama
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            container.innerHTML = historyHTML;
+        }
+
+        async function loadHistory() {
+            try {
+                const response = await fetch('/api/history');
+                const data = await response.json();
+                transcriptionHistory = data.history || [];
+                renderHistory();
+            } catch (error) {
+                console.error('Error loading history:', error);
+            }
+        }
+
+        async function clearHistory() {
+            if (!confirm('Are you sure you want to clear all transcription history?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/clear-history', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    transcriptionHistory = [];
+                    renderHistory();
+                    document.getElementById('transcription-count').textContent = '0 transcriptions';
+                }
+            } catch (error) {
+                console.error('Error clearing history:', error);
+            }
+        }
+
+        // Auto-refresh system info every 30 seconds
+        setInterval(loadSystemInfo, 30000);
+    </script>
+</body>
+</html>
