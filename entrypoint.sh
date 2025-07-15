@@ -27,4 +27,10 @@ else
 fi
 
 # Run the Python script with all passed arguments
-exec python /app/ollama_stt_simple.py "$@"
+if [ $# -eq 0 ]; then
+    # Default to web portal if no arguments provided
+    exec python /app/web_portal.py
+else
+    # Otherwise run with provided arguments
+    exec "$@"
+fi

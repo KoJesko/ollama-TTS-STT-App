@@ -101,7 +101,7 @@ app = Flask(__name__)
 
 # Configuration
 PORT = 55667
-HOST = '127.0.0.1'
+HOST = '0.0.0.0'  # Bind to all interfaces for Docker compatibility
 UPLOAD_FOLDER = 'uploads'
 TRANSCRIPTION_FOLDER = 'transcriptions'
 
