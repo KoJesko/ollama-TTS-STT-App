@@ -5,6 +5,9 @@ import importlib.util
 from datetime import datetime
 import os
 import time
+import platform
+import json
+import re
 
 def install_package(package_name):
     """Install a package using pip."""
@@ -22,7 +25,8 @@ def check_and_install_dependencies():
     required_packages = {
         'speech_recognition': 'SpeechRecognition',
         'pyaudio': 'pyaudio',
-        'pydub': 'pydub'
+        'pydub': 'pydub',
+        'yaml': 'PyYAML'
     }
     
     packages_to_install = []
@@ -55,6 +59,12 @@ def check_and_install_dependencies():
         except ImportError:
             print("Pydub import failed. Some audio processing features may not work.", file=sys.stderr)
             AudioSegment = None
+        
+        try:
+            import yaml
+        except ImportError:
+            print("PyYAML import failed. Docker support may not work.", file=sys.stderr)
+            yaml = None
         
         return sr, pyaudio, AudioSegment
     except ImportError as e:
@@ -190,6 +200,264 @@ def forward_to_tts(text, tts_script_path, voice=None, model=None, verbose=False)
     except Exception as e:
         print(f"❌ Error running TTS script: {e}")
 
+def detect_gpu_support():
+    """Detect GPU support and return the best available option."""
+    gpu_info = {
+        'has_nvidia': False,
+        'has_cuda': False,
+        'has_studio_drivers': False,
+        'has_gaming_drivers': False,
+        'recommended_runtime': 'cpu'
+    }
+    
+    print("🔍 Detecting GPU support...")
+    
+    # Check for NVIDIA GPU
+    try:
+        # Try nvidia-smi command
+        result = subprocess.run(['nvidia-smi', '--query-gpu=name,driver_version', '--format=csv,noheader'], 
+                              capture_output=True, text=True, timeout=10)
+        if result.returncode == 0 and result.stdout.strip():
+            gpu_info['has_nvidia'] = True
+            print(f"✅ NVIDIA GPU detected: {result.stdout.strip()}")
+            
+            # Check for CUDA
+            try:
+                cuda_result = subprocess.run(['nvidia-smi', '--query-gpu=cuda_version', '--format=csv,noheader'], 
+                                           capture_output=True, text=True, timeout=10)
+                if cuda_result.returncode == 0 and cuda_result.stdout.strip() and cuda_result.stdout.strip() != 'N/A':
+                    gpu_info['has_cuda'] = True
+                    gpu_info['recommended_runtime'] = 'cuda'
+                    print(f"✅ CUDA support detected: {cuda_result.stdout.strip()}")
+            except:
+                pass
+            
+            # Check driver type by version pattern
+            driver_version = result.stdout.strip().split(',')[1].strip() if ',' in result.stdout else ''
+            if driver_version:
+                # Studio drivers typically have different version patterns
+                # This is a heuristic - actual detection would require more sophisticated methods
+                if 'studio' in driver_version.lower():
+                    gpu_info['has_studio_drivers'] = True
+                    if not gpu_info['has_cuda']:
+                        gpu_info['recommended_runtime'] = 'nvidia-studio'
+                else:
+                    gpu_info['has_gaming_drivers'] = True
+                    if not gpu_info['has_cuda']:
+                        gpu_info['recommended_runtime'] = 'nvidia-gaming'
+            
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        print("ℹ️  No NVIDIA GPU detected or nvidia-smi not available")
+    
+    # Check for other GPU types (AMD, Intel)
+    try:
+        if platform.system() == "Windows":
+            # Check Windows GPU info
+            wmic_result = subprocess.run(['wmic', 'path', 'win32_VideoController', 'get', 'name'], 
+                                       capture_output=True, text=True, timeout=10)
+            if wmic_result.returncode == 0:
+                gpu_names = wmic_result.stdout.lower()
+                if 'amd' in gpu_names or 'radeon' in gpu_names:
+                    print("ℹ️  AMD GPU detected (CPU runtime recommended)")
+                elif 'intel' in gpu_names:
+                    print("ℹ️  Intel GPU detected (CPU runtime recommended)")
+    except:
+        pass
+    
+    print(f"🎯 Recommended runtime: {gpu_info['recommended_runtime']}")
+    return gpu_info
+
+def check_docker_support():
+    """Check if Docker is available and running."""
+    docker_info = {
+        'available': False,
+        'running': False,
+        'version': None
+    }
+    
+    try:
+        # Check if Docker is installed
+        version_result = subprocess.run(['docker', '--version'], capture_output=True, text=True, timeout=10)
+        if version_result.returncode == 0:
+            docker_info['available'] = True
+            docker_info['version'] = version_result.stdout.strip()
+            print(f"✅ Docker available: {docker_info['version']}")
+            
+            # Check if Docker daemon is running
+            try:
+                ps_result = subprocess.run(['docker', 'ps'], capture_output=True, text=True, timeout=10)
+                if ps_result.returncode == 0:
+                    docker_info['running'] = True
+                    print("✅ Docker daemon is running")
+                else:
+                    print("⚠️  Docker is installed but daemon is not running")
+            except:
+                print("⚠️  Cannot check Docker daemon status")
+        else:
+            print("ℹ️  Docker not found")
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        print("ℹ️  Docker not available")
+    
+    return docker_info
+
+def create_dockerfile(gpu_info):
+    """Create a Dockerfile based on GPU capabilities."""
+    if gpu_info['has_cuda']:
+        base_image = "nvidia/cuda:11.8-runtime-ubuntu22.04"
+        runtime_args = ["--gpus", "all"]
+    else:
+        base_image = "python:3.9-slim"
+        runtime_args = []
+    
+    dockerfile_content = f"""FROM {base_image}
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \\
+    portaudio19-dev \\
+    python3-pyaudio \\
+    ffmpeg \\
+    alsa-utils \\
+    pulseaudio \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application files
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/transcriptions /app/uploads
+
+# Expose port if needed
+EXPOSE 5000
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PULSE_RUNTIME_PATH=/tmp/pulse-runtime
+
+# Default command
+CMD ["python", "ollama_stt_simple.py", "--help"]
+"""
+    
+    return dockerfile_content, runtime_args
+
+def create_docker_compose(gpu_info):
+    """Create a docker-compose.yml file based on GPU capabilities."""
+    compose_content = {
+        'version': '3.8',
+        'services': {
+            'ollama-stt': {
+                'build': '.',
+                'volumes': [
+                    './transcriptions:/app/transcriptions',
+                    './uploads:/app/uploads'
+                ],
+                'environment': [
+                    'PYTHONUNBUFFERED=1'
+                ],
+                'stdin_open': True,
+                'tty': True
+            }
+        }
+    }
+    
+    # Add GPU support if available
+    if gpu_info['has_cuda']:
+        compose_content['services']['ollama-stt']['deploy'] = {
+            'resources': {
+                'reservations': {
+                    'devices': [{
+                        'driver': 'nvidia',
+                        'count': 'all',
+                        'capabilities': ['gpu']
+                    }]
+                }
+            }
+        }
+    
+    return compose_content
+
+def run_in_docker(args, gpu_info, docker_info):
+    """Run the application in Docker."""
+    if not docker_info['running']:
+        print("❌ Docker daemon is not running. Please start Docker Desktop.")
+        return False
+    
+    print("🐳 Setting up Docker environment...")
+    
+    # Create Dockerfile
+    dockerfile_content, runtime_args = create_dockerfile(gpu_info)
+    with open('Dockerfile', 'w') as f:
+        f.write(dockerfile_content)
+    print("📝 Created Dockerfile")
+    
+    # Create docker-compose.yml
+    compose_config = create_docker_compose(gpu_info)
+    import yaml
+    with open('docker-compose.yml', 'w') as f:
+        yaml.dump(compose_config, f, default_flow_style=False)
+    print("📝 Created docker-compose.yml")
+    
+    # Build the Docker image
+    print("🔨 Building Docker image...")
+    build_cmd = ['docker', 'build', '-t', 'ollama-stt', '.']
+    build_result = subprocess.run(build_cmd, capture_output=False)
+    
+    if build_result.returncode != 0:
+        print("❌ Docker build failed")
+        return False
+    
+    # Prepare Docker run command
+    docker_cmd = ['docker', 'run', '--rm', '-it']
+    docker_cmd.extend(runtime_args)
+    
+    # Mount volumes
+    docker_cmd.extend(['-v', f'{os.getcwd()}/transcriptions:/app/transcriptions'])
+    docker_cmd.extend(['-v', f'{os.getcwd()}/uploads:/app/uploads'])
+    
+    # Add audio device access (Linux/macOS)
+    if platform.system() != "Windows":
+        docker_cmd.extend(['--device', '/dev/snd'])
+    
+    # Add the image name
+    docker_cmd.append('ollama-stt')
+    
+    # Add application arguments
+    app_args = []
+    if args.duration != 5:
+        app_args.extend(['--duration', str(args.duration)])
+    if args.engine != 'google':
+        app_args.extend(['--engine', args.engine])
+    if args.output_path:
+        app_args.extend(['--output_path', args.output_path])
+    if args.voice:
+        app_args.extend(['--voice', args.voice])
+    if args.model != 'llama3.1:latest':
+        app_args.extend(['--model', args.model])
+    if args.verbose:
+        app_args.append('--verbose')
+    if args.no_forward:
+        app_args.append('--no_forward')
+    
+    docker_cmd.extend(app_args)
+    
+    print(f"🚀 Running in Docker: {' '.join(docker_cmd)}")
+    
+    try:
+        result = subprocess.run(docker_cmd, capture_output=False)
+        return result.returncode == 0
+    except KeyboardInterrupt:
+        print("\n🛑 Docker execution interrupted by user.")
+        return False
+    except Exception as e:
+        print(f"❌ Error running Docker container: {e}")
+        return False
+
 def main():
     print("🎙️  Ollama STT App - Starting up...")
     print("Checking dependencies...")
@@ -203,8 +471,47 @@ def main():
     parser.add_argument("--model", type=str, default="llama3.1:latest", help="Ollama model to use for TTS")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument("--no_forward", action="store_true", help="Don't forward to TTS, just transcribe")
+    parser.add_argument("--docker", action="store_true", help="Run in Docker container")
+    parser.add_argument("--runtime", type=str, choices=["auto", "cpu", "cuda", "nvidia-studio", "nvidia-gaming"], 
+                       default="auto", help="Runtime to use (default: auto)")
+    parser.add_argument("--gpu_info", action="store_true", help="Show GPU information and exit")
     
     args = parser.parse_args()
+    
+    # Detect GPU and Docker support
+    gpu_info = detect_gpu_support()
+    docker_info = check_docker_support()
+    
+    # Show GPU info if requested
+    if args.gpu_info:
+        print("\n🖥️  GPU Information:")
+        print(f"  NVIDIA GPU: {'✅' if gpu_info['has_nvidia'] else '❌'}")
+        print(f"  CUDA Support: {'✅' if gpu_info['has_cuda'] else '❌'}")
+        print(f"  Studio Drivers: {'✅' if gpu_info['has_studio_drivers'] else '❌'}")
+        print(f"  Gaming Drivers: {'✅' if gpu_info['has_gaming_drivers'] else '❌'}")
+        print(f"  Recommended Runtime: {gpu_info['recommended_runtime']}")
+        print(f"\n🐳 Docker Support:")
+        print(f"  Available: {'✅' if docker_info['available'] else '❌'}")
+        print(f"  Running: {'✅' if docker_info['running'] else '❌'}")
+        if docker_info['version']:
+            print(f"  Version: {docker_info['version']}")
+        return
+    
+    # Override runtime if specified
+    if args.runtime != "auto":
+        gpu_info['recommended_runtime'] = args.runtime
+        print(f"🎯 Using specified runtime: {args.runtime}")
+    
+    # Run in Docker if requested
+    if args.docker:
+        if not docker_info['available']:
+            print("❌ Docker is not available. Please install Docker Desktop.")
+            return
+        
+        success = run_in_docker(args, gpu_info, docker_info)
+        if not success:
+            print("❌ Docker execution failed.")
+        return
     
     # Check dependencies early
     try:
@@ -223,6 +530,9 @@ def main():
         print(f"❌ TTS script not found: {tts_script_path}", file=sys.stderr)
         print("Use --no_forward to skip TTS forwarding, or provide correct --tts_script path", file=sys.stderr)
         return
+    
+    # Show runtime information
+    print(f"🏃 Running with {gpu_info['recommended_runtime']} runtime")
     
     try:
         # Record audio
