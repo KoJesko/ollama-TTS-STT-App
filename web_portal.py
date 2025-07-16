@@ -347,4 +347,8 @@ if __name__ == '__main__':
     print("💡 Dependencies will be automatically installed if missing")
     print("=" * 50)
     
-    app.run(host=HOST, port=PORT, debug=True)
+    # Determine environment (default to production)
+    environment = os.environ.get('FLASK_ENV', 'production').lower()
+    is_debug_mode = environment == 'development'
+    
+    app.run(host=HOST, port=PORT, debug=is_debug_mode)
