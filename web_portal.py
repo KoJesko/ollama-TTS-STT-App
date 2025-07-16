@@ -225,11 +225,8 @@ def upload_audio():
             return jsonify({"success": False, "error": "No file selected"})
         
         # Save uploaded file
-        from werkzeug.utils import secure_filename
-        filename = f"upload_{int(time.time())}_{secure_filename(file.filename)}"
-        filepath = os.path.normpath(os.path.join(UPLOAD_FOLDER, filename))
-        if not filepath.startswith(os.path.abspath(UPLOAD_FOLDER)):
-            return jsonify({"success": False, "error": "Invalid file path"})
+        filename = f"upload_{int(time.time())}_{file.filename}"
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
         file.save(filepath)
         
         # Transcribe
